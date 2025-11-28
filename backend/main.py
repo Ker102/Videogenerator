@@ -124,12 +124,20 @@ async def generate_video(
         if negative_prompt:
             config_args["negative_prompt"] = negative_prompt
 
-        # Helper to process image uploads
+        # Helper to process image uploads for Veo API
         def process_image_upload(upload_file: UploadFile):
-            from PIL import Image
-            import io
+            """Convert uploaded image to format expected by Veo API"""
+            import base64
             file_content = upload_file.file.read()
-            return Image.open(io.BytesIO(file_content))
+            b64_encoded = base64.b64encode(file_content).decode('utf-8')
+            
+            # Determine mime type
+            mime_type = upload_file.content_type or "image/jpeg"
+            
+            return types.VideoGenerationImageInput(
+                bytes_base64_encoded=b64_encoded,
+                mime_type=mime_type
+            )
 
         # Handle Image Input (Image-to-Video)
         img_part = None
