@@ -122,6 +122,8 @@ async def generate_video(
                 config_args["person_generation"] = "allow_adult"
 
         # Handle Video Input (Extension)
+        # NOTE: Per Veo 3.1 docs, video extension works with videos from previous Veo generations
+        # However, we can try to upload a user video file and use it
         video_part = None
         if video:
              # Save video to disk
@@ -131,12 +133,8 @@ async def generate_video(
             
             print(f"Uploading video {video.filename}...")
             
-            # Read video file and upload using the File API
-            with open(video_path, 'rb') as f:
-                video_bytes = f.read()
-            
-            # Upload file to Gemini Files API
-            uploaded_file = client.files.upload(file=video_bytes, mime_type="video/mp4")
+            # Upload file using path string (as per google-generativeai SDK)
+            uploaded_file = client.files.upload(file=video_path)
             
             # Wait for processing
             while uploaded_file.state.name == "PROCESSING":
