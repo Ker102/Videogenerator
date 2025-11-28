@@ -130,7 +130,13 @@ async def generate_video(
                 shutil.copyfileobj(video.file, buffer)
             
             print(f"Uploading video {video.filename}...")
-            uploaded_file = client.files.upload(path=video_path)
+            
+            # Read video file and upload using the File API
+            with open(video_path, 'rb') as f:
+                video_bytes = f.read()
+            
+            # Upload file to Gemini Files API
+            uploaded_file = client.files.upload(file=video_bytes, mime_type="video/mp4")
             
             # Wait for processing
             while uploaded_file.state.name == "PROCESSING":
