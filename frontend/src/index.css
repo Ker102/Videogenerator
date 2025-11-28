@@ -185,3 +185,15 @@ video {
   font-size: 0.8rem;
   margin-top: 0.2rem;
 }
+
+.model-badge {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.4rem 1rem;
+  background: rgba(100, 108, 255, 0.2);
+  border: 1px solid var(--accent-color);
+  border-radius: 20px;
+  color: var(--accent-color);
+  font-size: 0.9rem;
+  font-weight: 500;
+}

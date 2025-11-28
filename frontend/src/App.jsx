@@ -108,6 +108,7 @@ function App() {
       <header>
         <h1>Veo Video Generator</h1>
         <p>Create stunning videos with Google's Veo 3.1 model</p>
+        <div className="model-badge">Using: Veo 3.1 (High-Quality Mode)</div>
       </header>
 
       <main>
