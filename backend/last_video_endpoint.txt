@@ -1,0 +1,12 @@
+
+@app.get("/last-video")
+async def get_last_video():
+    """Returns info about the last generated video available for extension"""
+    if last_generated_video["video_object"]:
+        return {
+            "available": True,
+            "filename": last_generated_video["filename"],
+            "duration": last_generated_video["duration"],
+            "aspect_ratio": last_generated_video["aspect_ratio"]
+        }
+    return {"available": False}

@@ -53,6 +53,14 @@ class GenerateRequest(BaseModel):
 # Store operations in memory for simplicity (in production use a DB)
 operations = {}
 
+# Store last generated video for extension feature
+last_generated_video = {
+    "video_object": None,  # The actual video object from operation.response
+    "filename": None,
+    "duration": None,
+    "aspect_ratio": None,
+}
+
 @app.post("/generate")
 async def generate_video(
     prompt: str = Form(...),
@@ -61,6 +69,7 @@ async def generate_video(
     resolution: str = Form("720p"),
     duration_seconds: str = Form("8"),
     negative_prompt: Optional[str] = Form(None),
+    extend_mode: bool = Form(False),  # NEW: Flag to extend last video
     image: Optional[UploadFile] = File(None),
     last_frame: Optional[UploadFile] = File(None),
     video: Optional[UploadFile] = File(None),
@@ -70,8 +79,41 @@ async def generate_video(
         raise HTTPException(status_code=500, detail="Gemini Client not initialized. Check server logs/API Key.")
 
     try:
-        print(f"Received request: prompt='{prompt}', model='{model}'")
+        print(f"Received request: prompt='{prompt}', model='{model}', extend_mode={extend_mode}")
         
+        # EXTEND MODE: Use last generated video
+        if extend_mode:
+            if not last_generated_video["video_object"]:
+                raise HTTPException(status_code=400, detail="No video available to extend. Generate a video first.")
+            
+            # Force extension constraints
+            resolution = "720p"
+            duration_seconds = "8"
+            aspect_ratio = last_generated_video.get("aspect_ratio", "16:9")
+            
+            print(f"Extending last video: {last_generated_video['filename']}")
+            
+            # Extension configuration
+            config = types.GenerateVideosConfig(
+                resolution="720p",
+                number_of_videos=1,
+                person_generation="allow_all"
+            )
+            
+            # Call API with video object from last generation
+            operation = client.models.generate_videos(
+                model=model,
+                video=last_generated_video["video_object"],
+                prompt=prompt,
+                config=config
+            )
+            
+            # Store operation and return
+            op_name = operation.name
+            operations[op_name] = operation
+            return {"operation_name": op_name, "status": "processing"}
+        
+        # NORMAL MODE: Regular generation
         config_args = {
             "aspect_ratio": aspect_ratio,
             "resolution": resolution,
@@ -225,26 +267,16 @@ async def get_status(operation_name: str):
                      
                      if not os.path.exists(save_path):
                          print(f"Downloading video to {save_path}")
-                         client.files.download(file=vid.video, config={"download_path": save_path}) # Check download signature
-                         # The docs say: client.files.download(file=generated_video.video)
-                         # And then: generated_video.video.save("filename.mp4") ??
-                         # Or: client.files.download(file=video.video) -> returns bytes?
-                         # Docs: video.video.save("name.mp4")
-                         # Let's try the save method on the video object if it exists after download?
-                         # Actually docs say:
-                         # client.files.download(file=video.video)
-                         # video.video.save("...")
-                         # This implies the object is updated with data?
-                         # Or maybe we just use the save_path in download?
-                         # Let's assume we can just write the bytes if download returns them, or use the .save method.
                          
-                         # Let's try to be safe:
-                         # The docs example:
-                         # client.files.download(file=video.video)
-                         # video.video.save("dialogue_example.mp4")
-                         
-                         # So we do that.
+                         # Download and save video
                          vid.video.save(save_path)
+                         
+                         # STORE VIDEO OBJECT for extension feature
+                         last_generated_video["video_object"] = vid.video
+                         last_generated_video["filename"] = filename
+                         last_generated_video["duration"] = 8  # Default, could track actual duration
+                         last_generated_video["aspect_ratio"] = "16:9"  # Could extract from config
+                         print(f"Stored video object for extension: {filename}")
 
                      return {"status": "done", "video_url": f"/videos/{filename}"}
             
@@ -255,6 +287,18 @@ async def get_status(operation_name: str):
     except Exception as e:
         print(f"Status check error: {e}")
         return {"status": "error", "detail": str(e)}
+
+@app.get("/last-video")
+async def get_last_video():
+    """Returns info about the last generated video available for extension"""
+    if last_generated_video["video_object"]:
+        return {
+            "available": True,
+            "filename": last_generated_video["filename"],
+            "duration": last_generated_video["duration"],
+            "aspect_ratio": last_generated_video["aspect_ratio"]
+        }
+    return {"available": False}
 
 @app.get("/videos/{filename}")
 async def get_video(filename: str):

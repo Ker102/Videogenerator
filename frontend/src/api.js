@@ -17,8 +17,11 @@ export const getStatus = async (operationName) => {
 };
 
 export const getVideoUrl = (filename) => {
-    // If filename is a full URL or path, handle it?
-    // The backend returns /videos/{filename}
     if (filename.startsWith('http')) return filename;
     return `${API_URL}${filename}`;
-}
+};
+
+export const getLastVideo = async () => {
+    const response = await axios.get(`${API_URL}/last-video`);
+    return response.data;
+};

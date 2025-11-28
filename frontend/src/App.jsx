@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { generateVideo, getStatus, getVideoUrl } from './api';
+import { generateVideo, getStatus, getVideoUrl, getLastVideo } from './api';
 import './App.css'; // We'll use App.css or index.css
 
 function App() {
@@ -15,6 +15,24 @@ function App() {
   const [status, setStatus] = useState('');
   const [generatedVideo, setGeneratedVideo] = useState(null);
   const [error, setError] = useState(null);
+  const [mode, setMode] = useState('generate'); // 'generate' or 'extend'
+  const [hasVideoToExtend, setHasVideoToExtend] = useState(false);
+  const [lastVideoInfo, setLastVideoInfo] = useState(null);
+
+  // Check for available video to extend on mount and after generation
+  useEffect(() => {
+    checkLastVideo();
+  }, [generatedVideo]);
+
+  const checkLastVideo = async () => {
+    try {
+      const data = await getLastVideo();
+      setHasVideoToExtend(data.available);
+      setLastVideoInfo(data.available ? data : null);
+    } catch (err) {
+      console.error("Error checking last video:", err);
+    }
+  };
 
   // Enforce Constraints
   useEffect(() => {
@@ -49,17 +67,22 @@ function App() {
 
     const formData = new FormData();
     formData.append('prompt', prompt);
-    formData.append('aspect_ratio', aspectRatio);
-    formData.append('resolution', resolution);
-    formData.append('duration_seconds', duration);
-    if (negativePrompt) formData.append('negative_prompt', negativePrompt);
-    if (imageFile) formData.append('image', imageFile);
-    if (referenceImages.length > 0) {
-      referenceImages.forEach((file) => {
-        formData.append('reference_images', file);
-      });
+    formData.append('extend_mode', mode === 'extend');
+
+    // Only add these if NOT in extend mode
+    if (mode === 'generate') {
+      formData.append('aspect_ratio', aspectRatio);
+      formData.append('resolution', resolution);
+      formData.append('duration_seconds', duration);
+      if (negativePrompt) formData.append('negative_prompt', negativePrompt);
+      if (imageFile) formData.append('image', imageFile);
+      if (referenceImages.length > 0) {
+        referenceImages.forEach((file) => {
+          formData.append('reference_images', file);
+        });
+      }
+      if (videoFile) formData.append('video', videoFile);
     }
-    if (videoFile) formData.append('video', videoFile);
 
     try {
       const { operation_name } = await generateVideo(formData);
@@ -113,6 +136,31 @@ function App() {
 
       <main>
         <div className="panel input-panel">
+          {/* Mode Selector */}
+          <div className="mode-selector">
+            <button
+              type="button"
+              className={`mode-btn ${mode === 'generate' ? 'active' : ''}`}
+              onClick={() => setMode('generate')}
+            >
+              ✨ Generate New
+            </button>
+            <button
+              type="button"
+              className={`mode-btn ${mode === 'extend' ? 'active' : ''}`}
+              onClick={() => setMode('extend')}
+              disabled={!hasVideoToExtend}
+            >
+              ➕ Extend Latest
+            </button>
+          </div>
+
+          {mode === 'extend' && lastVideoInfo && (
+            <div className="extend-info">
+              Extending: <strong>{lastVideoInfo.filename}</strong> (adds 7 seconds)
+            </div>
+          )}
+
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label>Prompt</label>
@@ -135,81 +183,85 @@ function App() {
               />
             </div>
 
-            <div className="settings-grid">
-              <div className="form-group">
-                <label>Aspect Ratio</label>
-                <select
-                  value={aspectRatio}
-                  onChange={(e) => setAspectRatio(e.target.value)}
-                  disabled={referenceImages.length > 0}
-                >
-                  <option value="16:9">16:9 (Landscape)</option>
-                  <option value="9:16">9:16 (Portrait)</option>
-                </select>
-                {referenceImages.length > 0 && <small className="constraint-text">Reference images require 16:9</small>}
-              </div>
+            {mode === 'generate' && (
+              <>
+                <div className="settings-grid">
+                  <div className="form-group">
+                    <label>Aspect Ratio</label>
+                    <select
+                      value={aspectRatio}
+                      onChange={(e) => setAspectRatio(e.target.value)}
+                      disabled={referenceImages.length > 0}
+                    >
+                      <option value="16:9">16:9 (Landscape)</option>
+                      <option value="9:16">9:16 (Portrait)</option>
+                    </select>
+                    {referenceImages.length > 0 && <small className="constraint-text">Reference images require 16:9</small>}
+                  </div>
 
-              <div className="form-group">
-                <label>Resolution</label>
-                <select
-                  value={resolution}
-                  onChange={(e) => setResolution(e.target.value)}
-                  disabled={!!videoFile}
-                >
-                  <option value="720p">720p</option>
-                  <option value="1080p">1080p</option>
-                </select>
-                {videoFile && <small className="constraint-text">Extensions must be 720p</small>}
-              </div>
+                  <div className="form-group">
+                    <label>Resolution</label>
+                    <select
+                      value={resolution}
+                      onChange={(e) => setResolution(e.target.value)}
+                      disabled={!!videoFile}
+                    >
+                      <option value="720p">720p</option>
+                      <option value="1080p">1080p</option>
+                    </select>
+                    {videoFile && <small className="constraint-text">Extensions must be 720p</small>}
+                  </div>
 
-              <div className="form-group">
-                <label>Duration</label>
-                <select
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                  disabled={resolution === '1080p' || !!videoFile || referenceImages.length > 0}
-                >
-                  <option value="4">4 seconds</option>
-                  <option value="6">6 seconds</option>
-                  <option value="8">8 seconds</option>
-                </select>
-                {(resolution === '1080p' || !!videoFile || referenceImages.length > 0) && <small className="constraint-text">This configuration requires 8s</small>}
-              </div>
-            </div>
+                  <div className="form-group">
+                    <label>Duration</label>
+                    <select
+                      value={duration}
+                      onChange={(e) => setDuration(e.target.value)}
+                      disabled={resolution === '1080p' || !!videoFile || referenceImages.length > 0}
+                    >
+                      <option value="4">4 seconds</option>
+                      <option value="6">6 seconds</option>
+                      <option value="8">8 seconds</option>
+                    </select>
+                    {(resolution === '1080p' || !!videoFile || referenceImages.length > 0) && <small className="constraint-text">This configuration requires 8s</small>}
+                  </div>
+                </div>
 
-            <div className="file-inputs">
-              <div className="form-group">
-                <label>Initial Image (Optional)</label>
-                <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files[0])} />
-                <small>For Image-to-Video generation</small>
-              </div>
+                <div className="file-inputs">
+                  <div className="form-group">
+                    <label>Initial Image (Optional)</label>
+                    <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files[0])} />
+                    <small>For Image-to-Video generation</small>
+                  </div>
 
-              <div className="form-group">
-                <label>Reference Images (Optional, max 3)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files);
-                    if (files.length > 3) {
-                      alert("You can only select up to 3 reference images.");
-                      e.target.value = ""; // Clear input
-                      setReferenceImages([]);
-                    } else {
-                      setReferenceImages(files);
-                    }
-                  }}
-                />
-                <small>Style/Character reference (Veo 3.1 only)</small>
-              </div>
+                  <div className="form-group">
+                    <label>Reference Images (Optional, max 3)</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files);
+                        if (files.length > 3) {
+                          alert("You can only select up to 3 reference images.");
+                          e.target.value = ""; // Clear input
+                          setReferenceImages([]);
+                        } else {
+                          setReferenceImages(files);
+                        }
+                      }}
+                    />
+                    <small>Style/Character reference (Veo 3.1 only)</small>
+                  </div>
 
-              <div className="form-group">
-                <label>Input Video (Optional)</label>
-                <input type="file" accept="video/*" onChange={(e) => setVideoFile(e.target.files[0])} />
-                <small>For Video Extension</small>
-              </div>
-            </div>
+                  <div className="form-group">
+                    <label>Input Video (Optional)</label>
+                    <input type="file" accept="video/*" onChange={(e) => setVideoFile(e.target.files[0])} />
+                    <small>For Video Extension</small>
+                  </div>
+                </div>
+              </>
+            )}
 
             <button type="submit" disabled={loading} className="generate-btn">
               {loading ? 'Generating...' : 'Generate Video'}
